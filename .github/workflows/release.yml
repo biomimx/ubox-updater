@@ -1,0 +1,83 @@
+name: Build and release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+            sep: ";"
+          - os: macos-latest
+            label: macos-apple-silicon
+            sep: ":"
+          - os: macos-15-intel
+            label: macos-intel
+            sep: ":"
+            optional: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional || false }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Build (PyInstaller)
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name "uBox Updater" \
+            --add-data "firmware${{ matrix.sep }}firmware" \
+            ${{ matrix.label == 'windows' && '--onefile' || '' }} \
+            run_updater.py
+      - name: Package (Windows)
+        if: matrix.label == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/uBox Updater.exe" -DestinationPath "uBox-Updater-windows.zip"
+      - name: Package (macOS)
+        if: matrix.label != 'windows'
+        run: |
+          cd dist && ditto -c -k --sequesterRsrc --keepParent "uBox Updater.app" "../uBox-Updater-${{ matrix.label }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uBox-Updater-${{ matrix.label }}
+          path: uBox-Updater-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Manifest
+        run: python tools/make_manifest.py "${GITHUB_REF_NAME}" manifest.json firmware
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: uBox Updater ${{ github.ref_name }}
+          body: |
+            uBox Updater for Windows and macOS, with the uBox Pro firmware files listed in manifest.json.
+            Windows: unzip and run "uBox Updater.exe". macOS: unzip, move "uBox Updater.app" to Applications; on first launch use right-click -> Open (unsigned app).
+          files: |
+            artifacts/uBox-Updater-*.zip
+            firmware/*.hex
+            manifest.json
