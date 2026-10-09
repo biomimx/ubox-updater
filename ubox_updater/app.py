@@ -25,6 +25,11 @@ RED = "#bd1724"
 IS_MAC = sys.platform == "darwin"
 FONT = "Helvetica Neue" if IS_MAC else "Segoe UI"
 MONO = "Menlo" if IS_MAC else "Consolas"
+if IS_MAC:
+    # Aqua ttk widgets paint their own frame with the window background: use it for the cards so
+    # buttons and menus do not sit in a differently coloured rectangle.
+    CARD = "systemWindowBackgroundColor"
+    BG = "#e3e5e9"
 
 
 class Card(tk.Frame):
@@ -50,6 +55,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"uBox Updater {APP_VERSION}")
+        if IS_MAC:
+            try:   # always light appearance, whatever the system setting (dark widgets on light cards look broken)
+                self.tk.call("::tk::unsupported::MacWindowStyle", "appearance", self._w, "aqua")
+            except tk.TclError:
+                pass
         self.configure(bg=BG)
         self.resizable(False, False)
         self.q: queue.Queue = queue.Queue()
