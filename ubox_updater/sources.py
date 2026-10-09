@@ -36,7 +36,8 @@ class FirmwareEntry:
     @property
     def label(self) -> str:
         tag = {"bundled": "included", "online": "online", "file": "file"}[self.origin]
-        return f"v{self.version} {self.variant}  ({tag})"
+        desc = "uNMC / uLung, uHeart 0.25 bar" if self.variant == "PHOENIX" else "uHeart 0.35 bar"
+        return f"v{self.version} {self.variant} - {desc}  ({tag})"
 
     def load(self, progress=None) -> FirmwareImage:
         if self.image:

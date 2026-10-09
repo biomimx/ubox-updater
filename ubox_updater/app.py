@@ -61,7 +61,19 @@ class App(tk.Tk):
             except tk.TclError:
                 pass
         self.configure(bg=BG)
+        # the combobox drop-down list is a plain Listbox: give it light colours explicitly
+        self.option_add("*TCombobox*Listbox.background", "#ffffff")
+        self.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+        self.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+        self.option_add("*TCombobox*Listbox.font", (FONT, 12))
         self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if IS_MAC:
+            try:
+                self.createcommand("::tk::mac::Quit", self._on_close)
+            except tk.TclError:
+                pass
         self.q: queue.Queue = queue.Queue()
         self.ubox = None
         self.entries: list[sources.FirmwareEntry] = []
@@ -111,14 +123,14 @@ class App(tk.Tk):
         row = tk.Frame(self.c2.body, bg=CARD)
         row.pack(fill="x")
         self.fw_var = tk.StringVar()
-        self.fw_combo = ttk.Combobox(row, textvariable=self.fw_var, state="readonly", width=40, font=(FONT, 11))
+        self.fw_combo = ttk.Combobox(row, textvariable=self.fw_var, state="readonly", width=46, font=(FONT, 11))
         self.fw_combo.pack(side="left")
         ttk.Button(row, text="Open file...", command=self.open_file).pack(side="left", padx=(10, 0))
         self.online_var = tk.StringVar(value="Checking for firmware published online...")
         tk.Label(self.c2.body, textvariable=self.online_var, bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w").pack(fill="x", pady=(6, 0))
         self.force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(self.c2.body, text="I know the variant of this uBox (needed only for firmware older than v8.4)",
-                        variable=self.force_var).pack(anchor="w", pady=(4, 0))
+                        variable=self.force_var, command=self._select_default).pack(anchor="w", pady=(4, 0))
 
         # card 3: update
         self.c3 = Card(body, "3", "Update")
@@ -137,6 +149,15 @@ class App(tk.Tk):
 
         tk.Label(body, text="Keep the USB cable connected and the uBox powered during the update. Settings, patterns and counters are preserved.",
                  bg=BG, fg=MUTED, font=(FONT, 10), wraplength=640, justify="left").pack(anchor="w", pady=(12, 0))
+
+    def _on_close(self):
+        if self.busy and not messagebox.askyesno("uBox Updater", "An operation is in progress. Quit anyway?"):
+            return
+        try:
+            self.destroy()
+        finally:
+            import os
+            os._exit(0)
 
     def log(self, msg: str):
         self.q.put(("log", msg))
@@ -201,22 +222,29 @@ class App(tk.Tk):
 
     def _merge_entries(self, new):
         self.entries = sources.merge(self.entries + new)
-        self.fw_combo["values"] = [e.label for e in self.entries]
         self._select_default()
         self._set_buttons()
 
+    def _visible(self) -> list:
+        """Only the firmware of the connected uBox's variant, unless the variant is unknown or overridden."""
+        variant = self.ubox.variant if self.ubox else None
+        if variant and not self.force_var.get():
+            return [e for e in self.entries if e.variant == variant] or self.entries
+        return self.entries
+
     def _select_default(self):
-        if not self.entries:
+        vis = self._visible()
+        self.fw_combo["values"] = [e.label for e in vis]
+        if not vis:
             self.c2.set_state(BORDER)
             return
-        variant = self.ubox.variant if self.ubox else None
-        pick = next((e for e in self.entries if variant is None or e.variant == variant), self.entries[0])
-        self.fw_combo.current(self.entries.index(pick))
+        self.fw_combo.current(0)
         self.c2.set_state(GREEN)
 
     def _selected(self) -> sources.FirmwareEntry | None:
+        vis = self._visible()
         i = self.fw_combo.current()
-        return self.entries[i] if 0 <= i < len(self.entries) else None
+        return vis[i] if 0 <= i < len(vis) else None
 
     # ---------------------------------------------------------------- actions
     def refresh(self):
@@ -262,7 +290,12 @@ class App(tk.Tk):
             messagebox.showerror("uBox Updater", f"Cannot use this file:\n{ex}")
             return
         self._merge_entries([e])
-        self.fw_combo.current(self.entries.index(next(x for x in self.entries if x.version == e.version and x.variant == e.variant)))
+        vis = self._visible()
+        match = next((x for x in vis if x.version == e.version and x.variant == e.variant), None)
+        if match:
+            self.fw_combo.current(vis.index(match))
+        else:
+            self.log(f"{e.label} is for the other variant: tick 'I know the variant' to select it.")
         self.log(f"Loaded {path}: {e.label}")
 
     def start_update(self):
