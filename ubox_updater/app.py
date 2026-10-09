@@ -123,14 +123,18 @@ class App(tk.Tk):
         row = tk.Frame(self.c2.body, bg=CARD)
         row.pack(fill="x")
         self.fw_var = tk.StringVar()
-        self.fw_combo = ttk.Combobox(row, textvariable=self.fw_var, state="readonly", width=46, font=(FONT, 11))
+        self.fw_combo = ttk.Combobox(row, textvariable=self.fw_var, state="readonly", width=40, font=(FONT, 11))
         self.fw_combo.pack(side="left")
         ttk.Button(row, text="Open file...", command=self.open_file).pack(side="left", padx=(10, 0))
         self.online_var = tk.StringVar(value="Checking for firmware published online...")
         tk.Label(self.c2.body, textvariable=self.online_var, bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w").pack(fill="x", pady=(6, 0))
+        opts = tk.Frame(self.c2.body, bg=CARD)
+        opts.pack(fill="x", pady=(4, 0))
+        self.old_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="Show older versions", variable=self.old_var, command=self._select_default).pack(side="left")
         self.force_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self.c2.body, text="I know the variant of this uBox (needed only for firmware older than v8.4)",
-                        variable=self.force_var, command=self._select_default).pack(anchor="w", pady=(4, 0))
+        ttk.Checkbutton(opts, text="I know the variant of this uBox (needed only for firmware older than v8.4)",
+                        variable=self.force_var, command=self._select_default).pack(side="left", padx=(18, 0))
 
         # card 3: update
         self.c3 = Card(body, "3", "Update")
@@ -226,11 +230,18 @@ class App(tk.Tk):
         self._set_buttons()
 
     def _visible(self) -> list:
-        """Only the firmware of the connected uBox's variant, unless the variant is unknown or overridden."""
+        """Latest version per variant (older ones on request); only the connected uBox's variant unless
+        the variant is unknown or overridden."""
         variant = self.ubox.variant if self.ubox else None
+        ent = self.entries
         if variant and not self.force_var.get():
-            return [e for e in self.entries if e.variant == variant] or self.entries
-        return self.entries
+            ent = [e for e in ent if e.variant == variant] or ent
+        if not self.old_var.get():
+            latest = {}
+            for e in ent:                      # entries are sorted newest first
+                latest.setdefault(e.variant, e)
+            ent = [e for e in ent if latest[e.variant] is e or e.origin == "file"]
+        return ent
 
     def _select_default(self):
         vis = self._visible()
