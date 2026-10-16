@@ -27,9 +27,16 @@ def detect(log: Log) -> ubox_serial.UBoxInfo | None:
     """Return the connected uBox (serial) or None. Also recognises a uBox already in bootloader mode."""
     ports = ubox_serial.list_ubox_ports()
     if ports:
-        info = ubox_serial.identify(ports[0])
+        try:
+            info = ubox_serial.identify(ports[0])
+        except ubox_serial.PortBusy:
+            log(f"uBox Pro found on {ports[0]}, but the port is in use by another program "
+                f"(Arduino IDE, a serial monitor...): close it and press Refresh.")
+            return ubox_serial.UBoxInfo(ports[0], None, None, "", busy=True)
         if info.version:
             log(f"uBox Pro found on {info.port}: firmware v{info.version} {info.variant}")
+            if info.clock_set:
+                log("uBox clock set to " + time.strftime("%d/%m/%Y %H:%M"))
         else:
             log(f"uBox Pro found on {info.port}: firmware older than v8.4 (version unknown)")
         return info
@@ -46,6 +53,9 @@ def run_update(entry: FirmwareEntry, ubox: ubox_serial.UBoxInfo | None, log: Log
 
     if ubox is None:
         raise UpdateError("No uBox connected. Connect the USB cable and press Refresh.")
+    if ubox.busy:
+        raise UpdateError(f"The port {ubox.port} is in use by another program (Arduino IDE, serial monitor...): "
+                          f"close it and press Refresh.")
 
     if ubox.variant and ubox.variant != img.variant and not force_variant:
         raise UpdateError(f"Variant mismatch: the uBox is {ubox.variant}, the file is {img.variant}. "
@@ -96,6 +106,8 @@ def run_update(entry: FirmwareEntry, ubox: ubox_serial.UBoxInfo | None, log: Log
     if info2.version:
         ok = (info2.version == img.version and info2.variant == img.variant)
         log(f"uBox reports firmware v{info2.version} {info2.variant}" + (" - update successful." if ok else " - UNEXPECTED, please retry."))
+        if info2.clock_set:
+            log("uBox clock set to " + time.strftime("%d/%m/%Y %H:%M"))
         if not ok:
             raise UpdateError("The uBox reports a different firmware than the one written.")
     else:

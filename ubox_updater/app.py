@@ -203,7 +203,7 @@ class App(tk.Tk):
     def _set_buttons(self):
         st = "disabled" if self.busy else "normal"
         self.btn_refresh.configure(state=st)
-        ready = (not self.busy and self.ubox is not None and bool(self.entries))
+        ready = (not self.busy and self.ubox is not None and not getattr(self.ubox, "busy", False) and bool(self.entries))
         self.btn_update.configure(state="normal" if ready else "disabled")
         self.c3.set_state(ACCENT if ready else BORDER)
 
@@ -214,6 +214,9 @@ class App(tk.Tk):
             self.c1.set_state(RED)
         elif u.port == "bootloader":
             self.dev_var.set("uBox in programming mode (variant unknown): tick 'I know the variant' and choose the file.")
+            self.c1.set_state(ORANGE)
+        elif u.busy:
+            self.dev_var.set(f"uBox on {u.port}, but the port is in use by another program (Arduino IDE, serial monitor): close it and press Refresh.")
             self.c1.set_state(ORANGE)
         elif u.version:
             self.dev_var.set(f"Connected on {u.port}  ·  firmware v{u.version} {u.variant}")
@@ -267,6 +270,8 @@ class App(tk.Tk):
         self.c1.set_state(BORDER)
         if not self.entries:
             self.q.put(("entries", sources.bundled_firmware()))
+        self.online_var.set("Checking for firmware published online...")
+        self.check_online()
 
         def work():
             try:
@@ -288,7 +293,7 @@ class App(tk.Tk):
                 self.q.put(("entries", ent))
                 self.q.put(("online", f"Online: {len(ent)} firmware file(s) published by BiomimX." if ent else "Online: no firmware published."))
             except Exception:
-                self.q.put(("online", "Online check not available (no connection). The included firmware can still be used."))
+                self.q.put(("online", "Offline: no connection to BiomimX. The included firmware can still be used (Refresh retries)."))
         threading.Thread(target=work, daemon=True).start()
 
     def open_file(self):

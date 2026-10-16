@@ -26,6 +26,18 @@ class UBoxInfo:
     version: str | None
     variant: str | None
     raw: str
+    busy: bool = False          # port exists but could not be opened (another program holds it)
+    clock_set: bool = False     # firmware accepted the 'T' time-sync command (>= v8.6.1)
+
+
+class PortBusy(Exception):
+    pass
+
+
+def local_epoch() -> int:
+    """Unix time shifted to local time: the uBox clock has no time zone, it shows what it is given."""
+    lt = time.localtime()
+    return int(time.time()) + lt.tm_gmtoff
 
 
 def list_ubox_ports() -> list[str]:
@@ -36,21 +48,47 @@ def list_ubox_ports() -> list[str]:
     return sorted(ports)
 
 
-def identify(port: str, timeout_s: float = 2.5) -> UBoxInfo:
-    """Send 'V' and collect the reply. Older firmware (< v8.4) ignores 'V': version stays None."""
-    with serial.Serial(port, 115200, timeout=0.2, write_timeout=1.0) as s:
+def identify(port: str, timeout_s: float = 2.5, sync_clock: bool = True) -> UBoxInfo:
+    """Send 'V' and collect the reply. Older firmware (< v8.4) ignores 'V': version stays None.
+    With sync_clock, also send 'T' + local epoch: firmware >= v8.6.1 sets its clock and answers "TIME,set=...";
+    older firmware ignores the characters. Raises PortBusy when the port cannot be opened."""
+    try:
+        s = serial.Serial(port, 115200, timeout=0.2, write_timeout=1.0)
+    except serial.SerialException as e:
+        msg = str(e).lower()
+        if "access" in msg or "permission" in msg or "busy" in msg or "resource" in msg or "denied" in msg:
+            raise PortBusy(str(e))
+        raise
+    with s:
         time.sleep(0.3)                      # let the port settle (and the firmware notice DTR)
         s.reset_input_buffer()
         s.write(b"V")
         s.flush()
         buf = b""
         t0 = time.monotonic()
+        info = None
         while time.monotonic() - t0 < timeout_s:
             buf += s.read(256)
             m = _V_RE.search(buf.decode("ascii", "replace"))
             if m:
-                return UBoxInfo(port, m.group(1), m.group(2), buf.decode("ascii", "replace"))
-    return UBoxInfo(port, None, None, buf.decode("ascii", "replace"))
+                info = UBoxInfo(port, m.group(1), m.group(2), buf.decode("ascii", "replace"))
+                break
+        if info is None:
+            return UBoxInfo(port, None, None, buf.decode("ascii", "replace"))
+        if sync_clock:
+            s.reset_input_buffer()
+            s.write(b"T%010d" % local_epoch())
+            s.flush()
+            buf = b""
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 1.0:
+                buf += s.read(256)
+                if b"TIME,set=" in buf:
+                    info.clock_set = True
+                    break
+                if b"TIME,error" in buf:
+                    break
+        return info
 
 
 def enter_bootloader(port: str) -> None:
