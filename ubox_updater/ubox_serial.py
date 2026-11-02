@@ -17,7 +17,7 @@ from serial.tools import list_ports
 TEENSY_SERIAL_VID = 0x16C0
 TEENSY_SERIAL_PIDS = {0x0483, 0x0489, 0x048B, 0x04D0, 0x04D1}   # Serial, Serial+MIDI, Serial+MIDI+Audio, ...
 
-_V_RE = re.compile(r"uBox Pro firmware v(\d+(?:\.\d+)*) (PHOENIX|STANDARD)")
+_V_RE = re.compile(r"uBox Pro firmware v(\d+(?:\.\d+)*) ([A-Z][A-Z0-9_]*)")   # 1.0.12: anche LAB e varianti future
 
 
 @dataclass

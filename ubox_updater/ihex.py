@@ -14,7 +14,7 @@ TEENSY41_CODE_SIZE = 8126464
 TEENSY41_BLOCK_SIZE = 1024
 FLASH_BASE = 0x60000000
 
-_FW_RE = re.compile(rb"uBox Pro firmware v(\d+(?:\.\d+)*) (PHOENIX|STANDARD)")
+_FW_RE = re.compile(rb"uBox Pro firmware v(\d+(?:\.\d+)*) ([A-Z][A-Z0-9_]*)")   # variante: qualunque parola maiuscola (STANDARD, PHOENIX, LAB, ...)
 
 
 class HexError(ValueError):
@@ -26,7 +26,7 @@ class FirmwareImage:
     data: bytearray            # flat image, len == TEENSY41_CODE_SIZE, unused = 0xFF
     used_end: int              # highest used address + 1
     version: str | None        # "8.5"
-    variant: str | None        # "PHOENIX" | "STANDARD"
+    variant: str | None        # "STANDARD" | "PHOENIX" | "LAB" | ...
     sha256: str
     source: str                # file path or label
 
